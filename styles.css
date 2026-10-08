@@ -156,6 +156,19 @@ h1, h2, p { margin: 0; }
   }
 }
 
+/* iPhone Home Screen app: iOS reports the height without the status bar,
+   which leaves a strip at the bottom. Use the real screen height instead. */
+.ios-standalone .app {
+  position: fixed; top: 0; left: 0; right: 0;
+  height: var(--app-h, 100dvh);
+  max-width: none; margin: 0; border-radius: 0; box-shadow: none;
+}
+/* Safety net on phones: whatever shows behind the app has the screen's own colour. */
+@media (max-width: 599px) {
+  body[data-screen="capture"], body[data-screen="settings"] { background: var(--bg-capture); }
+  body[data-screen="bank"] { background: var(--bg-bank); }
+}
+
 /* Decorative status-bar shape (hidden on real notched phones) */
 .notch {
   position: absolute; top: 10px; left: 50%;

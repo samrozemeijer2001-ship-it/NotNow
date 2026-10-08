@@ -2197,6 +2197,16 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     document.body.classList.toggle('has-safe-area', top > 20 || standalone);
   }
 
+  /** iPhone Home Screen app: size the app to the full screen (iOS leaves out the status bar). */
+  function fitToScreen() {
+    const on = isIOS() && isStandalone();
+    document.body.classList.toggle('ios-standalone', on);
+    if (!on) return;
+    const portrait = window.innerHeight >= window.innerWidth;
+    const full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+    document.documentElement.style.setProperty('--app-h', `${Math.max(full, window.innerHeight)}px`);
+  }
+
   function playIntroOnce() {
     if (session.get(KEYS.intro)) return;
     session.set(KEYS.intro, '1');
@@ -2259,6 +2269,9 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     buildRecapDays();
     bindEvents();
     detectSafeArea();
+    fitToScreen();
+    window.addEventListener('orientationchange', () => setTimeout(fitToScreen, 300));
+    window.addEventListener('resize', fitToScreen);
     renderSettings();
     navigate('capture', { initial: true });
     updateGreeting();
