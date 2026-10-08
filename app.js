@@ -18,6 +18,11 @@
    when this browser has never stored any thoughts before. */
 const USE_DEMO_DATA = true;
 
+/* Address of your reminder server (the Cloudflare Worker), without a trailing slash.
+   Example: 'https://thought-cards-push.yourname.workers.dev'
+   Leave empty to use in-app reminders only. */
+const PUSH_SERVER_URL = '';
+
 (() => {
   'use strict';
 
@@ -29,8 +34,17 @@ const USE_DEMO_DATA = true;
     places: 'thoughtCards.places',
     draft: 'thoughtCards.draft',
     intro: 'thoughtCards.introPlayed', // sessionStorage
+    device: 'thoughtCards.device',
+    vapidKey: 'thoughtCards.serverKey',
+    pushServer: 'thoughtCards.pushServer', // optional override for testing
   };
-  const DEFAULT_SETTINGS = { notifications: true, speechLang: 'en-US', darkMode: false };
+  const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  const WEEKDAY_NAMES = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' };
+  const defaultRecap = () => ({
+    enabled: true,
+    days: Object.fromEntries(WEEKDAYS.map((d) => [d, { on: true, time: '21:00' }])),
+  });
+  const DEFAULT_SETTINGS = { notifications: true, speechLang: 'en-US', darkMode: false, recap: defaultRecap() };
   const SPEECH_LANGS = { 'en-US': 'English', 'nl-NL': 'Nederlands' };
   const SWIPE_MIN_PX = 100;
   const SWIPE_RATIO = 0.3;
@@ -219,6 +233,7 @@ const USE_DEMO_DATA = true;
     draft: emptyDraft(),
     pendingDeleteId: null,
     reminderDraft: { time: '08:00', day: 'today' },
+    reminderTarget: null, // null = capture draft, otherwise a thought id
     placeDraft: { query: '', selectedId: null, current: null },
     sheet: null,
     capturing: false, // true while a card is flying away
@@ -302,7 +317,22 @@ const USE_DEMO_DATA = true;
       notifications: typeof s.notifications === 'boolean' ? s.notifications : DEFAULT_SETTINGS.notifications,
       speechLang: SPEECH_LANGS[s.speechLang] ? s.speechLang : DEFAULT_SETTINGS.speechLang,
       darkMode: s.darkMode === true,
+      recap: normalizeRecap(s.recap),
     };
+  }
+
+  function normalizeRecap(raw) {
+    const base = defaultRecap();
+    if (!raw || typeof raw !== 'object') return base;
+    const days = {};
+    for (const key of WEEKDAYS) {
+      const d = raw.days && raw.days[key];
+      days[key] = {
+        on: d && typeof d.on === 'boolean' ? d.on : base.days[key].on,
+        time: d && isTime(d.time) ? d.time : base.days[key].time,
+      };
+    }
+    return { enabled: typeof raw.enabled === 'boolean' ? raw.enabled : base.enabled, days };
   }
 
   function normalizePlaces(raw) {
@@ -343,9 +373,10 @@ const USE_DEMO_DATA = true;
     }
     state.thoughts = normalizeThoughtList(storage.read(KEYS.thoughts, []));
   }
-  const saveThoughts = () => storage.write(KEYS.thoughts, state.thoughts);
+  // Every save also queues a quiet sync to the reminder server (when lock screen alerts are on).
+  const saveThoughts = () => { const ok = storage.write(KEYS.thoughts, state.thoughts); scheduleSync(); return ok; };
   const savePlaces = () => storage.write(KEYS.places, state.places);
-  const saveSettings = () => storage.write(KEYS.settings, state.settings);
+  const saveSettings = () => { const ok = storage.write(KEYS.settings, state.settings); scheduleSync(); return ok; };
   const findThought = (id) => state.thoughts.find((t) => t.id === id);
 
   /* ===================== 5. CLEANUP ===================== */
@@ -378,6 +409,7 @@ const USE_DEMO_DATA = true;
     if (state.screen === 'bank' && JSON.stringify(state.thoughts) !== before) renderBank({ flip: true });
     updateGreeting();
     checkDueReminders();
+    if (document.visibilityState === 'visible') verifyPush();
   }
 
   /* ===================== 6. NAVIGATION ===================== */
@@ -526,6 +558,12 @@ const USE_DEMO_DATA = true;
         : el('button', { class: 'card-action', type: 'button', dataset: { action: 'done', id: t.id } }, [icon('check'), 'Done']),
       el('button', { class: 'card-action', type: 'button', 'aria-pressed': String(t.isImportant), dataset: { action: 'pin', id: t.id } },
         [icon('star', t.isImportant ? 'icon--fill' : ''), t.isImportant ? 'Unpin' : 'Pin']),
+      el('button', {
+        class: `card-action card-action--icon${t.reminder.enabled ? ' is-set' : ''}`,
+        type: 'button',
+        'aria-label': t.reminder.enabled ? 'Change reminder' : 'Set a reminder',
+        dataset: { action: 'remind-card', id: t.id },
+      }, [icon('clock')]),
       el('button', { class: 'card-action card-action--icon', type: 'button', 'aria-label': 'Let this thought go', dataset: { action: 'delete', id: t.id } }, [icon('trash')]),
     ]);
 
@@ -992,6 +1030,8 @@ const USE_DEMO_DATA = true;
     language: '#sheet-language',
     privacy: '#sheet-privacy',
     about: '#sheet-about',
+    recap: '#sheet-recap',
+    install: '#sheet-install',
   };
   const sheetTimers = new Map();
   let focusBeforeSheet = null;
@@ -1106,8 +1146,11 @@ const USE_DEMO_DATA = true;
     }
   }
 
-  function openReminderSheet() {
-    const r = state.draft.reminder;
+  /** Opens the reminder sheet for the capture draft, or for a saved thought when an id is given. */
+  function openReminderSheet(thoughtId = null) {
+    const thought = thoughtId ? findThought(thoughtId) : null;
+    state.reminderTarget = thought ? thought.id : null;
+    const r = thought ? (thought.reminder.enabled ? thought.reminder : null) : state.draft.reminder;
     const now = new Date();
     if (r) {
       state.reminderDraft = { time: r.time, day: r.date === localDateKey(now) ? 'today' : 'tomorrow' };
@@ -1199,14 +1242,34 @@ const USE_DEMO_DATA = true;
   function saveReminder() {
     const { time, day } = state.reminderDraft;
     const date = day === 'today' ? localDateKey() : localDateKey(addDays(new Date(), 1));
-    state.draft.reminder = { enabled: true, date, time, displayText: reminderChipText({ date, time }), notifiedAt: null };
-    persistDraft();
+    const reminder = { enabled: true, date, time, displayText: reminderChipText({ date, time }), notifiedAt: null };
     vibrate(10);
+    const thought = state.reminderTarget ? findThought(state.reminderTarget) : null;
+    if (thought) {
+      thought.reminder = reminder;
+      thought.updatedAt = nowIso();
+      saveThoughts();
+      closeSheet();
+      renderBank();
+      toast(`Reminder set: ${reminderLabel(reminder)}`, { icon: 'check' });
+      return;
+    }
+    state.draft.reminder = reminder;
+    persistDraft();
     closeSheet();
     updateCaptureUI();
   }
 
   function clearReminder() {
+    const thought = state.reminderTarget ? findThought(state.reminderTarget) : null;
+    if (thought) {
+      thought.reminder = emptyReminder();
+      thought.updatedAt = nowIso();
+      saveThoughts();
+      closeSheet();
+      renderBank();
+      return;
+    }
     state.draft.reminder = null;
     persistDraft();
     closeSheet();
@@ -1227,7 +1290,8 @@ const USE_DEMO_DATA = true;
       t.reminder.notifiedAt = now.toISOString();
       changed = true;
       // Only nudge for reminders that came due recently and while notifications are on.
-      if (state.settings.notifications && now - due < 12 * 60 * 60 * 1000) showNudge(t);
+      // With lock screen alerts active, the server already sends it, so no double nudge.
+      if (state.settings.notifications && !pushActive() && now - due < 12 * 60 * 60 * 1000) showNudge(t);
     }
     if (changed) saveThoughts();
   }
@@ -1529,7 +1593,11 @@ const USE_DEMO_DATA = true;
     const s = state.settings;
     const notif = $('[data-value="notifications"][data-action="toggle-setting"]');
     notif.setAttribute('aria-checked', String(s.notifications));
-    $('#notif-sub').textContent = s.notifications ? 'Reminders are on' : 'Reminders are off';
+    $('#notif-sub').textContent = !s.notifications
+      ? 'Reminders are off'
+      : pushActive() ? 'On, also on your lock screen' : 'Reminders are on, in the app';
+    renderPushCallout();
+    $('#recap-sub').textContent = recapSummary(s.recap);
     const dark = $('[data-value="darkMode"][data-action="toggle-setting"]');
     dark.setAttribute('aria-checked', String(s.darkMode));
     $('#dark-sub').textContent = s.darkMode ? 'On' : 'Off';
@@ -1540,9 +1608,13 @@ const USE_DEMO_DATA = true;
   function toggleSetting(key) {
     if (key === 'notifications') {
       state.settings.notifications = !state.settings.notifications;
-      // Ask for system notifications only when the person turns reminders on.
-      if (state.settings.notifications && 'Notification' in window && Notification.permission === 'default') {
-        try { Notification.requestPermission().catch(() => {}); } catch (_) { /* old API */ }
+      if (state.settings.notifications) {
+        // Turning reminders on also offers lock screen alerts (permission is asked inside this tap).
+        const env = pushEnvironment();
+        if (env === 'ready') enablePush();
+        else if (env === 'needs-install') setTimeout(() => openSheet('install'), 250);
+      } else if (pushState.device && pushState.device.subscribed) {
+        disablePush();
       }
     }
     if (key === 'darkMode') {
@@ -1560,6 +1632,315 @@ const USE_DEMO_DATA = true;
     saveSettings();
     renderSettings();
     setTimeout(closeSheet, 220);
+  }
+
+  /* ===================== 14b. LOCK SCREEN PUSH & DAILY RECAP =====================
+     The app keeps working on its own. When lock screen alerts are on, it sends a
+     copy of the thoughts (+ recap schedule + time zone) to your reminder server,
+     which sends Web Push notifications at the right minute. */
+  const pushState = { device: null, busy: false, syncTimer: null };
+
+  function randomId(bytes) {
+    const arr = new Uint8Array(bytes);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(arr);
+    else for (let i = 0; i < bytes; i++) arr[i] = Math.floor(Math.random() * 256);
+    return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  function loadDevice() {
+    const d = storage.read(KEYS.device, null);
+    if (d && typeof d.id === 'string' && typeof d.token === 'string') {
+      pushState.device = { id: d.id, token: d.token, subscribed: d.subscribed === true };
+    } else {
+      pushState.device = { id: `dev_${randomId(12)}`, token: randomId(24), subscribed: false };
+      saveDevice();
+    }
+  }
+  const saveDevice = () => storage.write(KEYS.device, pushState.device);
+
+  function serverUrl() {
+    let override = null;
+    try { override = localStorage.getItem(KEYS.pushServer); } catch (_) { /* ignore */ }
+    return String(override || PUSH_SERVER_URL || '').trim().replace(/\/+$/, '');
+  }
+  const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isStandalone = () => (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  const timeZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (_) { return 'UTC'; } };
+
+  /** 'ready' | 'no-server' | 'needs-install' | 'blocked' | 'unsupported' */
+  function pushEnvironment() {
+    if (!serverUrl()) return 'no-server';
+    const capable = window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    if (isIOS() && !isStandalone()) return 'needs-install';
+    if (!capable) return 'unsupported';
+    if (Notification.permission === 'denied') return 'blocked';
+    return 'ready';
+  }
+  function pushActive() {
+    return !!(state.settings.notifications && pushState.device && pushState.device.subscribed && serverUrl());
+  }
+
+  async function api(path, body) {
+    const res = await fetch(serverUrl() + path, body
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      : { method: 'GET' });
+    let data = {};
+    try { data = await res.json(); } catch (_) { /* empty */ }
+    if (!res.ok) {
+      const err = new Error(data.error || `Server answered ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  }
+  const credentials = () => ({ deviceId: pushState.device.id, token: pushState.device.token });
+
+  function base64UrlToBytes(value) {
+    const norm = value.replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(norm + '='.repeat((4 - (norm.length % 4)) % 4));
+    return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  }
+  function sameBytes(a, b) {
+    const x = new Uint8Array(a); const y = new Uint8Array(b);
+    return x.length === y.length && x.every((v, i) => v === y[i]);
+  }
+  async function getServerKey() {
+    try {
+      const { publicKey } = await api('/api/config');
+      storage.write(KEYS.vapidKey, publicKey);
+      return publicKey;
+    } catch (err) {
+      const cached = storage.read(KEYS.vapidKey, null);
+      if (cached) return cached;
+      throw err;
+    }
+  }
+
+  /** Turns on lock screen alerts. Must start inside a tap: the permission prompt comes first. */
+  async function enablePush() {
+    const env = pushEnvironment();
+    if (env === 'needs-install') { openSheet('install'); return false; }
+    if (env === 'no-server') { toast('Lock screen reminders need your reminder server. The setup guide explains how.', { icon: 'info', tone: 'info', duration: 4200 }); return false; }
+    if (env === 'unsupported') { toast('This browser can’t show lock screen reminders. In-app nudges still work.', { icon: 'info', tone: 'info', duration: 4000 }); return false; }
+    if (env === 'blocked') { toast('Notifications are blocked for this app. You can allow them in your phone’s Settings.', { icon: 'info', tone: 'info', duration: 4600 }); return false; }
+    if (pushState.busy) return false;
+
+    pushState.busy = true;
+    renderSettings();
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast(permission === 'denied'
+          ? 'Notifications are blocked for this app. You can allow them in your phone’s Settings.'
+          : 'No problem. You can turn this on any time.', { icon: 'info', tone: 'info', duration: 4000 });
+        return false;
+      }
+      const [key, registration] = await Promise.all([getServerKey(), navigator.serviceWorker.ready]);
+      const appKey = base64UrlToBytes(key);
+      let sub = await registration.pushManager.getSubscription();
+      if (sub && sub.options && sub.options.applicationServerKey && !sameBytes(sub.options.applicationServerKey, appKey)) {
+        await sub.unsubscribe();
+        sub = null;
+      }
+      if (!sub) sub = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
+
+      await api('/api/register', { ...credentials(), subscription: sub.toJSON(), timezone: timeZone() });
+      pushState.device.subscribed = true;
+      saveDevice();
+      await syncNow();
+      vibrate(12);
+      toast('Reminders will reach your lock screen', { icon: 'check' });
+      return true;
+    } catch (err) {
+      console.warn('[Thought Cards] Push setup failed:', err);
+      if (err && err.status === 403) {
+        // This device id is taken on the server with another token: start with a fresh identity.
+        pushState.device = { id: `dev_${randomId(12)}`, token: randomId(24), subscribed: false };
+        saveDevice();
+      }
+      toast('Couldn’t reach the reminder server just now. In-app nudges still work.', { icon: 'info', tone: 'info', duration: 4000 });
+      return false;
+    } finally {
+      pushState.busy = false;
+      renderSettings();
+    }
+  }
+
+  async function disablePush() {
+    pushState.device.subscribed = false;
+    saveDevice();
+    renderSettings();
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = reg && await reg.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+    } catch (_) { /* nothing to undo */ }
+    if (serverUrl()) api('/api/unregister', credentials()).catch(() => {});
+  }
+
+  /** What the server needs: text, status and the exact moment of each reminder. */
+  function thoughtsForServer() {
+    return state.thoughts.map((t) => {
+      const due = reminderDate(t.reminder);
+      return {
+        id: t.id, text: t.text, isImportant: t.isImportant, isCompleted: t.isCompleted,
+        completedAt: t.completedAt, createdAt: t.createdAt,
+        reminderAt: due ? due.getTime() : null,
+      };
+    });
+  }
+
+  async function syncNow() {
+    clearTimeout(pushState.syncTimer);
+    if (!pushActive()) return false;
+    try {
+      await api('/api/sync', { ...credentials(), timezone: timeZone(), recap: state.settings.recap, thoughts: thoughtsForServer() });
+      return true;
+    } catch (err) {
+      if (err && (err.status === 404 || err.status === 403)) {
+        // The server no longer knows this phone (for example after the subscription expired).
+        pushState.device.subscribed = false;
+        saveDevice();
+        renderSettings();
+      }
+      return false;
+    }
+  }
+  function scheduleSync() {
+    if (!pushActive()) return;
+    clearTimeout(pushState.syncTimer);
+    pushState.syncTimer = setTimeout(syncNow, 600);
+  }
+
+  /** On start and when coming back: make sure the phone still has its subscription, then sync. */
+  async function verifyPush() {
+    if (!pushActive()) return;
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = reg && await reg.pushManager.getSubscription();
+      if (!sub) {
+        pushState.device.subscribed = false;
+        saveDevice();
+        renderSettings();
+        return;
+      }
+    } catch (_) { /* keep going */ }
+    syncNow();
+  }
+
+  async function sendTestPush() {
+    if (!pushActive()) return;
+    const btn = $('#push-test-btn');
+    btn.disabled = true;
+    try {
+      await syncNow();
+      await api('/api/test', credentials());
+      toast('Test sent. It should arrive in a few seconds.', { icon: 'check' });
+    } catch (err) {
+      toast('The test didn’t go through. Try turning Notifications off and on again.', { icon: 'info', tone: 'info', duration: 4200 });
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function renderPushCallout() {
+    const box = $('#push-callout');
+    const env = pushEnvironment();
+    const show = state.settings.notifications && !pushActive() && env !== 'unsupported';
+    box.hidden = !show;
+    if (!show) return;
+    const btn = $('#push-callout-btn');
+    const copy = {
+      ready: ['Want reminders on your lock screen too?', 'Turn on'],
+      'needs-install': ['For lock screen reminders, add Thought Cards to your Home Screen first.', 'Show me how'],
+      blocked: ['Notifications are blocked. Allow them in your phone’s Settings, then try again.', 'Try again'],
+      'no-server': ['Lock screen reminders need your reminder server. See the setup guide.', ''],
+    }[env];
+    $('#push-callout-text').textContent = copy[0];
+    btn.textContent = pushState.busy ? 'Connecting…' : copy[1];
+    btn.hidden = !copy[1];
+    btn.disabled = pushState.busy;
+  }
+
+  /* --- Daily recap settings --- */
+  function recapSummary(recap) {
+    if (!recap.enabled) return 'Off';
+    const on = WEEKDAYS.filter((d) => recap.days[d].on);
+    if (!on.length) return 'No days picked';
+    const times = new Set(on.map((d) => recap.days[d].time));
+    if (times.size > 1) return 'Your own time for each day';
+    const t = formatTime([...times][0]);
+    const key = on.join(',');
+    if (on.length === 7) return `Every day at ${t}`;
+    if (key === 'mon,tue,wed,thu,fri') return `Weekdays at ${t}`;
+    if (key === 'sat,sun') return `Weekends at ${t}`;
+    return `${on.map((d) => WEEKDAY_NAMES[d].slice(0, 3)).join(', ')} at ${t}`;
+  }
+
+  function buildRecapDays() {
+    const rows = WEEKDAYS.map((d) => el('div', { class: 'recap-day', dataset: { day: d } }, [
+      el('span', { class: 'recap-day__name', text: WEEKDAY_NAMES[d] }),
+      el('input', { class: 'recap-day__time', type: 'time', dataset: { recapTime: d }, 'aria-label': `${WEEKDAY_NAMES[d]} recap time` }),
+      el('button', { class: 'recap-day__switch', type: 'button', role: 'switch', 'aria-checked': 'true', 'aria-label': `Recap on ${WEEKDAY_NAMES[d]}`, dataset: { action: 'toggle-recap-day', value: d } },
+        [el('span', { class: 'switch', 'aria-hidden': 'true' })]),
+    ]));
+    $('#recap-days').replaceChildren(...rows);
+  }
+
+  function renderRecapSheet() {
+    const recap = state.settings.recap;
+    $('[data-action="toggle-recap"]').setAttribute('aria-checked', String(recap.enabled));
+    $('#recap-master-sub').textContent = recapSummary(recap);
+    $('#recap-body').classList.toggle('is-off', !recap.enabled);
+    $('#recap-body').inert = !recap.enabled;
+    for (const d of WEEKDAYS) {
+      const row = $(`.recap-day[data-day="${d}"]`);
+      const input = $('input', row);
+      if (input.value !== recap.days[d].time) input.value = recap.days[d].time;
+      input.disabled = !recap.days[d].on;
+      $('button', row).setAttribute('aria-checked', String(recap.days[d].on));
+      row.classList.toggle('is-off', !recap.days[d].on);
+    }
+    const note = $('#recap-note');
+    const active = pushActive();
+    $('#push-test-btn').hidden = !active;
+    if (active) { note.hidden = true; return; }
+    note.hidden = false;
+    const env = pushEnvironment();
+    note.textContent = env === 'needs-install'
+      ? 'Your recap arrives as a lock screen notification. Add Thought Cards to your Home Screen, then turn on Notifications.'
+      : env === 'no-server'
+        ? 'Your recap arrives as a lock screen notification once your reminder server is set up.'
+        : 'Your recap arrives as a lock screen notification. Turn on lock screen alerts under Notifications first.';
+  }
+
+  function updateRecap(mutator) {
+    mutator(state.settings.recap);
+    saveSettings();
+    renderRecapSheet();
+    renderSettings();
+  }
+
+  /* --- Opening the right thought from a notification --- */
+  function openThought(id) {
+    hideNudge();
+    state.query = '';
+    $('#bank-search').value = '';
+    navigate('bank');
+    if (!id || !findThought(id)) return;
+    setTimeout(() => {
+      if (!cardEl(id)) renderBank();
+      setExpanded(id);
+      const card = cardEl(id);
+      if (card) setTimeout(() => card.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' }), 340);
+    }, 140);
+  }
+  function handleDeepLink() {
+    const hash = location.hash || '';
+    const match = hash.match(/^#thought=(.+)$/);
+    if (match) openThought(decodeURIComponent(match[1]));
+    else if (hash === '#bank') navigate('bank');
+    else return;
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (_) { /* ignore */ }
   }
 
   /* ===================== 15. FEEDBACK ===================== */
@@ -1613,11 +1994,7 @@ const USE_DEMO_DATA = true;
   function openNudgedThought() {
     hideNudge();
     if (!nudgeId || !findThought(nudgeId)) return;
-    state.query = '';
-    $('#bank-search').value = '';
-    navigate('bank');
-    const id = nudgeId;
-    setTimeout(() => toggleCard(id), 120);
+    openThought(nudgeId);
   }
 
   /* ===================== 16. EVENTS & INIT ===================== */
@@ -1652,6 +2029,7 @@ const USE_DEMO_DATA = true;
       case 'undo': undoComplete(id); break;
       case 'pin': togglePin(id); break;
       case 'delete': askDelete(id); break;
+      case 'remind-card': openReminderSheet(id); break;
       case 'confirm-delete': confirmDelete(); break;
       // sheets
       case 'close-sheet': closeSheet(); break;
@@ -1678,6 +2056,20 @@ const USE_DEMO_DATA = true;
       // settings
       case 'toggle-setting': toggleSetting(value); break;
       case 'set-lang': setSpeechLang(value); break;
+      // lock screen alerts & daily recap
+      case 'push-callout': enablePush(); break;
+      case 'push-test': sendTestPush(); break;
+      case 'open-recap': renderRecapSheet(); openSheet('recap'); break;
+      case 'toggle-recap': updateRecap((r) => { r.enabled = !r.enabled; }); vibrate(8); break;
+      case 'toggle-recap-day': updateRecap((r) => { r.days[value].on = !r.days[value].on; }); vibrate(8); break;
+      case 'recap-apply-all': {
+        const time = $('#recap-all-time').value;
+        if (isTime(time)) {
+          updateRecap((r) => { WEEKDAYS.forEach((d) => { r.days[d].time = time; }); });
+          toast(`Every recap day now at ${formatTime(time)}`, { icon: 'check' });
+        }
+        break;
+      }
       // misc
       case 'review-soon': toast('Daily Review is on its way. Your thoughts are safe in the Thought Bank.', { icon: 'sun', tone: 'info', duration: 3200 }); break;
       case 'nudge-open': openNudgedThought(); break;
@@ -1753,6 +2145,24 @@ const USE_DEMO_DATA = true;
 
     // Recorder: tap anywhere to stop
     recorder.el.addEventListener('click', stopSpeech);
+
+    // Daily recap: a time per weekday
+    $('#recap-days').addEventListener('change', (e) => {
+      const day = e.target.dataset.recapTime;
+      if (day && isTime(e.target.value)) updateRecap((r) => { r.days[day].time = e.target.value; });
+    });
+
+    // A tapped notification asks the open app to show the right thought
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (e) => {
+        const data = e.data || {};
+        if (data.type !== 'open-from-notification') return;
+        if (data.thoughtId) openThought(data.thoughtId);
+        else if (data.kind === 'recap') navigate('bank');
+      });
+    }
+    window.addEventListener('hashchange', handleDeepLink);
+    window.addEventListener('online', () => syncNow());
 
     // Returning to the app: clean up, refresh, check reminders
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onReturnToApp(); });
@@ -1836,6 +2246,7 @@ const USE_DEMO_DATA = true;
   };
 
   function init() {
+    loadDevice();
     loadSettings();
     applyTheme();
     loadThoughts();
@@ -1845,6 +2256,7 @@ const USE_DEMO_DATA = true;
 
     restoreDraft();
     initClock();
+    buildRecapDays();
     bindEvents();
     detectSafeArea();
     renderSettings();
@@ -1853,6 +2265,8 @@ const USE_DEMO_DATA = true;
     playIntroOnce();
     checkDueReminders();
     registerServiceWorker();
+    handleDeepLink();
+    verifyPush();
   }
 
   init();

@@ -1,0 +1,17 @@
+# Only needed if you deploy with the command line (npx wrangler deploy).
+# Dashboard users can ignore this file.
+name = "thought-cards-push"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "thought-cards"
+database_id = "PASTE-YOUR-D1-DATABASE-ID-HERE"
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+VAPID_SUBJECT = "mailto:you@example.com"
+# ALLOWED_ORIGIN = "https://yourname.github.io"

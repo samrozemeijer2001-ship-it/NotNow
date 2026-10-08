@@ -14,6 +14,19 @@ Mobiel webprototype in gewone HTML, CSS en JavaScript. Geen framework, geen buil
 | `manifest.webmanifest` | PWA-gegevens (naam, kleuren, iconen) |
 | `service-worker.js` | Offline-cache van de eigen statische bestanden |
 | `assets/` | App-iconen (192, 512, maskable 512, Apple touch icon, SVG-favicon) |
+| `push-server/worker.js` | Reminder-server (Cloudflare Worker) voor lockscreen-meldingen en de dagelijkse recap |
+| `push-server/SETUP.md` | Stap-voor-stap instellen van die server, zonder command line |
+
+## Lockscreen-reminders en dagelijkse recap
+
+Zonder server werken reminders alleen in de app zolang die openstaat. Met de reminder-server (zie **`push-server/SETUP.md`**) komen ze op je lockscreen, ook als de app dicht is:
+
+- **Tijdreminder:** zet een reminder op een gedachte (tijdens Capture, of later via het klokje in een geopende kaart in de Thought Bank). Op dat tijdstip krijg je een melding; tikken opent die gedachte.
+- **Dagelijkse recap:** Settings → **Daily recap**. Kies per dag of je hem wilt en hoe laat. Je krijgt een overzicht van wat er nog wacht (belangrijk eerst), plus hoeveel je die dag hebt afgerond.
+- **Werkt op:** iPhone vanaf iOS 16.4, alleen als de app via *Zet op beginscherm* is geïnstalleerd en vanaf daar geopend. Android met Chrome.
+- **Hoe het werkt:** de app stuurt bij elke wijziging een kopie van je gedachten, reminder-tijden, recap-schema en tijdzone naar je eigen server. Die controleert elke minuut wat er verstuurd moet worden.
+- **Uitzetten:** Notifications uit in Settings verwijdert de kopie op de server.
+- **Niet mogelijk in een webapp:** melding bij aankomst op een locatie.
 
 ## Lokaal openen
 
@@ -47,7 +60,7 @@ Alle paden zijn relatief, dus de app werkt ook onder zo’n `/repository/`-subpa
 - Eigen plekken: `thoughtCards.places`
 - Niet-opgeslagen invoer op het Capture-scherm: `thoughtCards.draft`
 
-Alles blijft in déze browser op dít apparaat. Er is geen account en geen synchronisatie. Site-data wissen wist ook de Thought Bank. Een geïnstalleerde app op iOS heeft een eigen opslag, los van Safari.
+Alles staat in déze browser op dít apparaat. Er is geen account. Alleen met lockscreen-reminders aan gaat er een kopie naar je eigen reminder-server. Site-data wissen wist ook de Thought Bank. Een geïnstalleerde app op iOS heeft een eigen opslag, los van Safari.
 
 Beschadigde opgeslagen data laat de app niet crashen: de ruwe tekst wordt als `…backup-<tijd>` bewaard en de app start met een lege lijst. Ontbrekende velden worden aangevuld door `normalizeThought()`.
 
@@ -66,13 +79,20 @@ thoughtCardsDebug.thoughts()           // kopie van alle gedachten
 thoughtCardsDebug.resetAll()           // alles wissen en herladen
 ```
 
+Testen met een andere server zonder `app.js` te wijzigen:
+
+```js
+localStorage.setItem('thoughtCards.pushServer', 'https://...workers.dev'); location.reload();
+```
+
 ## Offline
 
 Na het eerste bezoek via HTTPS (of localhost) opent de app ook zonder internet: schermen, opslaan, zoeken, Done en verwijderen werken gewoon. Offline valt het lettertype Outfit terug op het systeemlettertype, en spraak werkt in de meeste browsers niet zonder netwerk. Bij een nieuwe versie: verhoog `CACHE_VERSION` in `service-worker.js`.
 
 ## Wat gesimuleerd of beperkt is
 
-- **Reminders:** verschijnen als in-app melding (“A gentle nudge”) zolang de app open is. Echte achtergrondnotificaties zijn in een webapp niet betrouwbaar; de data (`date`, `time`, `notifiedAt`) is opgezet om later in React Native lokale notificaties te plannen.
+- **Reminders zonder server:** verschijnen alleen als in-app melding (“A gentle nudge”) zolang de app open is. Met de reminder-server komen ze op je lockscreen.
+- **Reminder-dag:** je kiest Today of Tomorrow; verder vooruit kan nog niet.
 - **Locaties:** Home, Office, Laundromat en de lijst in *Find a location* zijn voorbeeldplekken. Zoeken filtert je eigen plekken en laat je een nieuwe naam toevoegen; er is geen echte adreszoeker of geofencing. *Use my current location* gebruikt wel echt `navigator.geolocation` (alleen via HTTPS).
 - **Spraak:** gebruikt de Web Speech API. Werkt in Chrome (Android/desktop) en Safari (iOS 14.5+); niet in Firefox. In een op het beginscherm geïnstalleerde iOS-app kan spraak ontbreken; dan verschijnt een vriendelijke melding en kun je gewoon typen.
 - **Daily Review** (het zonnetje in het menu) is een placeholder.

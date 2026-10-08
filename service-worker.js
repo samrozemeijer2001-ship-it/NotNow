@@ -4,7 +4,7 @@
    Bump CACHE_VERSION when you publish changes. */
 
 const CACHE_PREFIX = 'thought-cards-';
-const CACHE_VERSION = 'v1.0.0';
+const CACHE_VERSION = 'v1.1.0';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 
 const APP_SHELL = [
@@ -65,13 +65,36 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-/* Tapping a reminder notification brings the app to the front. */
+/* Push from the reminder server: a time reminder, the daily recap or a test.
+   Every push must show a notification (iOS stops delivering otherwise). */
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (_) {
+    data = { body: event.data ? event.data.text() : '' };
+  }
+  const options = {
+    body: data.body || 'Something is waiting for you in your Thought Bank.',
+    icon: 'assets/icon-192.png',
+    badge: 'assets/icon-192.png',
+    data: { url: data.url || './', thoughtId: data.thoughtId || null, kind: data.kind || null },
+  };
+  if (data.tag) { options.tag = data.tag; options.renotify = true; }
+  event.waitUntil(self.registration.showNotification(data.title || 'Thought Cards', options));
+});
+
+/* Tapping a notification opens the app on the right thought (or the Thought Bank for a recap). */
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      const open = clients.find((c) => 'focus' in c);
-      return open ? open.focus() : self.clients.openWindow('./');
-    })
-  );
+  const data = event.notification.data || {};
+  const target = new URL(data.url || './', self.registration.scope).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const client = windows.find((c) => c.url.startsWith(self.registration.scope));
+    if (client) {
+      try { await client.focus(); } catch (_) { /* some browsers refuse focus */ }
+      client.postMessage({ type: 'open-from-notification', thoughtId: data.thoughtId, kind: data.kind });
+      return;
+    }
+    await self.clients.openWindow(target);
+  })());
 });
