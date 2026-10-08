@@ -21,7 +21,7 @@ const USE_DEMO_DATA = true;
 /* Address of your reminder server (the Cloudflare Worker), without a trailing slash.
    Example: 'https://thought-cards-push.yourname.workers.dev'
    Leave empty to use in-app reminders only. */
-const PUSH_SERVER_URL = '';
+const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.dev';
 
 (() => {
   'use strict';
