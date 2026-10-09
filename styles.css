@@ -159,9 +159,13 @@ h1, h2, p { margin: 0; }
 
 /* iPhone Home Screen app: iOS reports the height without the status bar,
    which leaves a strip at the bottom. Use the real screen height instead. */
-.ios-standalone .app {
-  position: fixed; top: 0; left: 0; right: 0;
-  height: var(--app-h, 100dvh);
+html.ios-standalone, html.ios-standalone body {
+  height: var(--app-h, 100vh);
+  overflow: hidden;
+}
+html.ios-standalone .app {
+  position: absolute; top: 0; left: 0; right: 0;
+  height: var(--app-h, 100vh);
   max-width: none; margin: 0; border-radius: 0; box-shadow: none;
 }
 /* Safety net on phones: whatever shows behind the app has the screen's own colour. */

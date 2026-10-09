@@ -2492,6 +2492,7 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
   /** iPhone Home Screen app: size the app to the full screen (iOS leaves out the status bar). */
   function fitToScreen() {
     const on = isIOS() && isStandalone();
+    document.documentElement.classList.toggle('ios-standalone', on);
     document.body.classList.toggle('ios-standalone', on);
     if (!on) return;
     const portrait = window.innerHeight >= window.innerWidth;
@@ -2564,6 +2565,10 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     fitToScreen();
     window.addEventListener('orientationchange', () => setTimeout(fitToScreen, 300));
     window.addEventListener('resize', fitToScreen);
+    // The page is a little taller than iOS's viewport: keep it from sliding up.
+    window.addEventListener('scroll', () => {
+      if (document.body.classList.contains('ios-standalone') && !document.body.classList.contains('keyboard-open') && window.scrollY) window.scrollTo(0, 0);
+    }, { passive: true });
     renderSettings();
     navigate('capture', { initial: true });
     updateGreeting();
