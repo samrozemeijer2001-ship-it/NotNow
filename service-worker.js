@@ -4,7 +4,7 @@
    Bump CACHE_VERSION when you publish changes. */
 
 const CACHE_PREFIX = 'thought-cards-';
-const CACHE_VERSION = 'v1.1.2';
+const CACHE_VERSION = 'v1.2.0';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 
 const APP_SHELL = [
@@ -76,7 +76,8 @@ self.addEventListener('push', (event) => {
     body: data.body || 'Something is waiting for you in your Thought Bank.',
     icon: 'assets/icon-192.png',
     badge: 'assets/icon-192.png',
-    data: { url: data.url || './', thoughtId: data.thoughtId || null, kind: data.kind || null },
+    // A recap notification opens the Daily recap screen.
+    data: { url: data.kind === 'recap' ? './#recap' : (data.url || './'), thoughtId: data.thoughtId || null, kind: data.kind || null },
   };
   if (data.tag) { options.tag = data.tag; options.renotify = true; }
   event.waitUntil(self.registration.showNotification(data.title || 'Thought Cards', options));

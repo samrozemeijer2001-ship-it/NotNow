@@ -91,6 +91,18 @@
       </div>
     </section>
 
+    <!-- ===================== DAILY RECAP ===================== -->
+    <section class="screen screen--recap" id="screen-recap" data-screen="recap" aria-labelledby="recap-screen-title">
+      <header class="recap-head">
+        <div>
+          <p class="greeting"><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg><span id="recap-date">Today</span></p>
+          <h1 class="bank-title" id="recap-screen-title">Daily recap</h1>
+        </div>
+        <button class="times-btn" type="button" data-action="open-recap" aria-haspopup="dialog"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg>Times</button>
+      </header>
+      <div class="recap-content" id="recap-content"></div>
+    </section>
+
     <!-- ===================== CAPTURE ===================== -->
     <section class="screen screen--capture is-active" id="screen-capture" data-screen="capture" aria-labelledby="capture-title">
       <header class="intro-item intro-item--1">
@@ -181,7 +193,7 @@
     <!-- ===================== NAVIGATION ===================== -->
     <nav class="tabbar" id="tabbar" aria-label="Main">
       <button class="tab" type="button" data-nav="bank" aria-label="Thought Bank"><span class="tab__bubble"><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg></span></button>
-      <button class="tab" type="button" data-action="review-soon" aria-haspopup="dialog" aria-label="Daily recap"><span class="tab__bubble"><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg></span></button>
+      <button class="tab" type="button" data-nav="recap" aria-label="Daily recap"><span class="tab__bubble"><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg></span></button>
       <button class="tab is-active" type="button" data-nav="capture" aria-label="Capture" aria-current="page"><span class="tab__bubble"><svg class="icon" aria-hidden="true"><use href="#i-bubble"/></svg></span></button>
       <button class="tab" type="button" data-nav="settings" aria-label="Settings"><span class="tab__bubble"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg></span></button>
     </nav>
@@ -286,8 +298,8 @@
     <section class="sheet" id="sheet-recap" role="dialog" aria-modal="true" aria-labelledby="recap-title" hidden>
       <div class="sheet-grab" data-sheet-grab><span class="sheet-handle"></span></div>
       <div class="sheet-content">
-        <h2 class="sheet-title" id="recap-title" tabindex="-1">Daily recap</h2>
-        <p class="sheet-sub">A gentle look at what’s still waiting, at the time you pick for each day.</p>
+        <h2 class="sheet-title" id="recap-title" tabindex="-1">Recap times</h2>
+        <p class="sheet-sub">Pick when your recap arrives, for each day of the week.</p>
         <button class="recap-master" type="button" role="switch" aria-checked="true" data-action="toggle-recap">
           <span><span class="recap-master__title">Send me a recap</span><span class="recap-master__sub" id="recap-master-sub">On</span></span>
           <span class="switch" aria-hidden="true"></span>

@@ -407,13 +407,14 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     if (storage.has(KEYS.thoughts)) state.thoughts = normalizeThoughtList(storage.read(KEYS.thoughts, []));
     cleanupCompletedThoughtsFromPreviousDays();
     if (state.screen === 'bank' && JSON.stringify(state.thoughts) !== before) renderBank({ flip: true });
+    if (state.screen === 'recap') renderRecapScreen();
     updateGreeting();
     checkDueReminders();
     if (document.visibilityState === 'visible') verifyPush();
   }
 
   /* ===================== 6. NAVIGATION ===================== */
-  const screens = { bank: $('#screen-bank'), capture: $('#screen-capture'), settings: $('#screen-settings') };
+  const screens = { bank: $('#screen-bank'), recap: $('#screen-recap'), capture: $('#screen-capture'), settings: $('#screen-settings') };
 
   function navigate(name, { initial = false } = {}) {
     if (!screens[name]) return;
@@ -444,13 +445,20 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     }
     if (name === 'settings') renderSettings();
     if (name === 'capture') updateCaptureUI();
+    if (name === 'recap') {
+      renderRecapScreen({ animate: !initial });
+      screens.recap.scrollTop = 0;
+      startRecapTicker();
+    } else {
+      stopRecapTicker();
+    }
     updateThemeColor();
   }
 
   function updateThemeColor() {
     const meta = $('meta[name="theme-color"]');
     if (!meta) return;
-    const color = cssVar(state.screen === 'bank' ? '--bg-bank' : '--bg-capture');
+    const color = cssVar(state.screen === 'bank' ? '--bg-bank' : state.screen === 'recap' ? '--bg-recap' : '--bg-capture');
     if (color) meta.setAttribute('content', color);
   }
 
@@ -1598,6 +1606,7 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
       : pushActive() ? 'On, also on your lock screen' : 'Reminders are on, in the app';
     renderPushCallout();
     $('#recap-sub').textContent = recapSummary(s.recap);
+    if (state.screen === 'recap') renderRecapScreen();
     const dark = $('[data-value="darkMode"][data-action="toggle-setting"]');
     dark.setAttribute('aria-checked', String(s.darkMode));
     $('#dark-sub').textContent = s.darkMode ? 'On' : 'Off';
@@ -1920,6 +1929,288 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     renderSettings();
   }
 
+  /* ===================== 14c. DAILY RECAP SCREEN =====================
+     Before today's recap time: a countdown with a little sunset.
+     From the recap time until midnight: today's recap itself. */
+  const recapUI = { timer: null, phase: null, refs: null };
+
+  /** The recap moment on a given calendar day, or null when that day is off. */
+  function recapMomentOn(date) {
+    const recap = state.settings.recap;
+    if (!recap.enabled) return null;
+    const key = WEEKDAYS[(date.getDay() + 6) % 7];
+    const day = recap.days[key];
+    if (!day || !day.on) return null;
+    const [h, m] = day.time.split(':').map(Number);
+    const moment = new Date(date);
+    moment.setHours(h, m, 0, 0);
+    return moment;
+  }
+  function nextRecapMoment(now) {
+    for (let i = 0; i <= 7; i++) {
+      const t = recapMomentOn(addDays(now, i));
+      if (t && t > now) return t;
+    }
+    return null;
+  }
+  function previousRecapMoment(now) {
+    for (let i = 0; i <= 7; i++) {
+      const t = recapMomentOn(addDays(now, -i));
+      if (t && t <= now) return t;
+    }
+    return null;
+  }
+  /** 'ready' (today's recap is out), 'waiting' (counting down) or 'off'. */
+  function recapPhase(now) {
+    const today = recapMomentOn(now);
+    if (today && today <= now) return 'ready';
+    return nextRecapMoment(now) ? 'waiting' : 'off';
+  }
+
+  function whenLabel(moment) {
+    const key = localDateKey(moment);
+    const time = formatTime(`${pad(moment.getHours())}:${pad(moment.getMinutes())}`);
+    const day = dayLabel(key);
+    if (day === 'Today' || day === 'Tomorrow') return `${day} at ${time}`;
+    return `${WEEKDAY_NAMES[WEEKDAYS[(moment.getDay() + 6) % 7]]} at ${time}`;
+  }
+  function splitDuration(ms) {
+    const total = Math.max(0, Math.ceil(ms / 1000));
+    return {
+      d: Math.floor(total / 86400),
+      h: Math.floor((total % 86400) / 3600),
+      m: Math.floor((total % 3600) / 60),
+      s: total % 60,
+    };
+  }
+  function shortDuration(ms) {
+    const { d, h, m } = splitDuration(ms);
+    if (ms < 60000) return 'less than a minute';
+    if (d) return `${d}d ${h}h`;
+    if (h) return `${h}h ${m}m`;
+    return `${m} min`;
+  }
+  function spokenDuration(ms) {
+    const { d, h, m } = splitDuration(ms);
+    const part = (n, word) => (n ? `${n} ${word}${n === 1 ? '' : 's'}` : '');
+    const parts = [part(d, 'day'), part(h, 'hour'), part(m, 'minute')].filter(Boolean);
+    return parts.length ? parts.join(' and ') : 'less than a minute';
+  }
+
+  /* --- The sunset: the sun travels along an arc and sets when the recap arrives --- */
+  function svgEl(tag, attrs = {}) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+    return node;
+  }
+  function buildSunset() {
+    const svg = svgEl('svg', { class: 'sunset', viewBox: '0 0 280 150', 'aria-hidden': 'true', focusable: 'false' });
+    const arc = 'M 30 130 A 110 110 0 0 1 250 130';
+    svg.append(
+      svgEl('path', { class: 'sunset__track', d: arc }),
+      svgEl('path', { class: 'sunset__trail', d: arc, pathLength: 1 }),
+      svgEl('rect', { class: 'sunset__ground', x: 0, y: 130, width: 280, height: 20, rx: 0 }),
+      svgEl('line', { class: 'sunset__horizon', x1: 8, y1: 130, x2: 272, y2: 130 }),
+    );
+    const sun = svgEl('g', { class: 'sunset__sun' });
+    sun.append(svgEl('circle', { class: 'sunset__glow', r: 24 }), svgEl('circle', { class: 'sunset__disc', r: 13 }));
+    svg.append(sun);
+    return svg;
+  }
+  function placeSun(svg, progress) {
+    const p = clamp(progress, 0, 1);
+    const angle = Math.PI - p * Math.PI;
+    const x = 140 + 110 * Math.cos(angle);
+    const y = 130 - 110 * Math.sin(angle);
+    svg.querySelector('.sunset__sun').setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
+    svg.querySelector('.sunset__trail').setAttribute('stroke-dasharray', `${p.toFixed(4)} 1`);
+  }
+
+  function buildCountdownUnits(ms) {
+    const { d, h, m, s } = splitDuration(ms);
+    const units = d
+      ? [[d, d === 1 ? 'day' : 'days'], [h, h === 1 ? 'hour' : 'hours'], [m, 'min']]
+      : [[h, h === 1 ? 'hour' : 'hours'], [m, 'min'], [s, 'sec']];
+    return units.map(([n, label], i) => el('span', { class: 'countdown__unit' }, [
+      el('span', { class: 'countdown__num', text: i === 0 ? String(n) : pad(n) }),
+      el('span', { class: 'countdown__label', text: label }),
+    ]));
+  }
+
+  function recapPushCallout() {
+    const env = pushEnvironment();
+    if (pushActive() || !state.settings.notifications || env === 'no-server' || env === 'unsupported') return null;
+    const text = env === 'blocked'
+      ? 'Notifications are blocked. Allow them in your phone’s Settings to get your recap on the lock screen.'
+      : 'Want your recap on your lock screen too?';
+    return el('div', { class: 'push-callout push-callout--cool' }, [
+      el('span', { class: 'push-callout__text', text }),
+      el('button', { class: 'push-callout__btn', type: 'button', dataset: { action: 'push-callout' }, text: env === 'needs-install' ? 'Show me how' : env === 'blocked' ? 'Try again' : 'Turn on' }),
+    ]);
+  }
+
+  function buildWaitingView(now) {
+    const next = nextRecapMoment(now);
+    const prev = previousRecapMoment(now) || new Date(next.getTime() - 24 * 3600 * 1000);
+    const sunset = buildSunset();
+    const units = el('div', { class: 'countdown', 'aria-hidden': 'true' }, buildCountdownUnits(next - now));
+    const spoken = el('p', { class: 'sr-only' });
+    const openCount = state.thoughts.filter((t) => !t.isCompleted).length;
+    const note = openCount
+      ? `${openCount} thought${openCount === 1 ? ' is' : 's are'} resting safely in your Thought Bank. Nothing to look at until then.`
+      : 'Your head is clear. Nothing to look at until then.';
+
+    recapUI.refs = { next, prev, sunset, units, spoken };
+    placeSun(sunset, (now - prev) / (next - prev));
+    spoken.textContent = `Your recap arrives in ${spokenDuration(next - now)}, ${whenLabel(next).replace(/^(Today|Tomorrow)/, (w) => w.toLowerCase())}.`;
+
+    return [
+      el('div', { class: 'recap-hero' }, [
+        sunset,
+        el('p', { class: 'recap-hero__label', text: 'Your recap arrives in' }),
+        units,
+        spoken,
+        el('p', { class: 'recap-hero__when' }, [icon('clock'), whenLabel(next)]),
+      ]),
+      el('p', { class: 'recap-wait-note', text: note }),
+      recapPushCallout(),
+    ];
+  }
+
+  function buildOffView() {
+    const anyDay = WEEKDAYS.some((d) => state.settings.recap.days[d].on);
+    return [
+      el('div', { class: 'recap-hero recap-hero--off' }, [
+        el('span', { class: 'recap-off-icon', 'aria-hidden': 'true' }, [icon('moon')]),
+        el('p', { class: 'recap-off-title', text: state.settings.recap.enabled && !anyDay ? 'No recap days picked' : 'Your recap is resting' }),
+        el('p', { class: 'recap-off-text', text: 'Pick a time and you’ll get a gentle look at what’s still waiting.' }),
+        el('button', { class: 'btn-primary', type: 'button', dataset: { action: 'open-recap' }, text: 'Pick a time' }),
+      ]),
+    ];
+  }
+
+  function recapRow(t, variant, metaOverride = null) {
+    const lead = variant === 'done' ? icon('check')
+      : variant === 'upcoming' ? icon('clock')
+        : t.isImportant ? icon('star', 'icon--fill') : icon('thumb', 'icon--fill');
+    const meta = el('span', { class: 'recap-row__meta' });
+    if (metaOverride) meta.append(el('span', {}, [metaOverride]));
+    else {
+      if (t.reminder.enabled) meta.append(el('span', {}, [icon('clock'), reminderLabel(t.reminder)]));
+      if (t.location.enabled) meta.append(el('span', {}, [icon('pin'), t.location.name]));
+    }
+    return el('button', {
+      class: `recap-row recap-row--${variant}${variant === 'waiting' && t.isImportant ? ' is-important' : ''}`,
+      type: 'button',
+      dataset: { action: 'open-thought', id: t.id },
+    }, [
+      el('span', { class: 'recap-row__lead', 'aria-hidden': 'true' }, [lead]),
+      el('span', { class: 'recap-row__body' }, [
+        el('span', { class: 'recap-row__text', text: t.text }),
+        meta.childNodes.length ? meta : null,
+      ]),
+      t.isImportant && variant === 'waiting' ? el('span', { class: 'sr-only', text: ' Important.' }) : null,
+    ]);
+  }
+
+  function recapSection(title, count, rows) {
+    if (!rows.length) return null;
+    return el('section', { class: 'recap-section' }, [
+      el('h2', { class: 'recap-section__title' }, [title, el('span', { class: 'recap-section__count', text: String(count) })]),
+      el('div', { class: 'recap-list' }, rows),
+    ]);
+  }
+
+  function buildReadyView(now) {
+    const today = localDateKey(now);
+    const open = getSortedThoughts().filter((t) => !t.isCompleted);
+    const done = state.thoughts
+      .filter((t) => t.isCompleted && t.completedAt && localDateKey(new Date(t.completedAt)) === today)
+      .sort((a, b) => Date.parse(b.completedAt) - Date.parse(a.completedAt));
+    const endOfTomorrow = addDays(dateFromKey(today), 2);
+    const upcoming = state.thoughts
+      .map((t) => ({ t, due: !t.isCompleted ? reminderDate(t.reminder) : null }))
+      .filter((x) => x.due && x.due > now && x.due < endOfTomorrow)
+      .sort((a, b) => a.due - b.due);
+
+    const donePill = done.length
+      ? el('p', { class: 'done-pill' }, [icon('check'), `You let go of ${done.length} today`])
+      : null;
+    const hero = open.length
+      ? el('div', { class: 'recap-hero recap-hero--summary' }, [
+          el('p', { class: 'recap-summary__label', text: 'Today’s recap' }),
+          el('p', { class: 'recap-summary__big' }, [
+            el('span', { class: 'recap-summary__num', text: String(open.length) }),
+            el('span', { class: 'recap-summary__text', text: `thought${open.length === 1 ? '' : 's'} still waiting` }),
+          ]),
+          donePill,
+        ])
+      : el('div', { class: 'recap-hero recap-hero--summary recap-hero--clear' }, [
+          el('span', { class: 'recap-clear-icon', 'aria-hidden': 'true' }, [icon('sparkles')]),
+          el('p', { class: 'recap-summary__big' }, [el('span', { class: 'recap-summary__text recap-summary__text--big', text: 'All clear' })]),
+          el('p', { class: 'recap-off-text', text: 'Nothing is waiting. Your head is clear.' }),
+          donePill,
+        ]);
+
+    const next = nextRecapMoment(now);
+    const footer = next ? el('p', { class: 'recap-next' }, [icon('clock'), el('span', {})]) : null;
+    recapUI.refs = { next, footer };
+    if (footer) updateRecapFooter(now);
+
+    return [
+      hero,
+      recapSection('Still waiting', open.length, open.map((t) => recapRow(t, 'waiting'))),
+      recapSection('Coming up', upcoming.length, upcoming.map(({ t, due }) => recapRow(t, 'upcoming', `${dayLabel(localDateKey(due))} · ${formatTime(`${pad(due.getHours())}:${pad(due.getMinutes())}`)}`))),
+      recapSection('Let go today', done.length, done.map((t) => recapRow(t, 'done', 'Done today'))),
+      footer,
+      recapPushCallout(),
+    ];
+  }
+
+  function updateRecapFooter(now) {
+    const { next, footer } = recapUI.refs || {};
+    if (!footer || !next) return;
+    footer.lastChild.textContent = `Next recap ${whenLabel(next).replace(/^(Today|Tomorrow)/, (w) => w.toLowerCase()).replace(/^(\w+day) at/, 'on $1 at')}, in ${shortDuration(next - now)}`;
+  }
+
+  function renderRecapScreen({ animate = false } = {}) {
+    const now = new Date();
+    $('#recap-date').textContent = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    const phase = recapPhase(now);
+    recapUI.phase = phase;
+    const children = (phase === 'waiting' ? buildWaitingView(now) : phase === 'ready' ? buildReadyView(now) : buildOffView()).filter(Boolean);
+    const content = $('#recap-content');
+    content.classList.toggle('is-entering', animate);
+    children.forEach((child, i) => child.style.setProperty('--i', String(Math.min(i, 8))));
+    content.replaceChildren(...children);
+    if (animate) setTimeout(() => content.classList.remove('is-entering'), 900);
+  }
+
+  /** Once a second while the screen is open: count down, move the sun, switch phase at the right moment. */
+  function tickRecap() {
+    if (state.screen !== 'recap' || document.visibilityState === 'hidden') return;
+    const now = new Date();
+    if (recapPhase(now) !== recapUI.phase) { renderRecapScreen({ animate: true }); vibrate(12); return; }
+    const refs = recapUI.refs;
+    if (!refs || !refs.next) return;
+    if (recapUI.phase === 'waiting') {
+      const left = refs.next - now;
+      refs.units.replaceChildren(...buildCountdownUnits(left));
+      placeSun(refs.sunset, (now - refs.prev) / (refs.next - refs.prev));
+      if (now.getSeconds() === 0) refs.spoken.textContent = `Your recap arrives in ${spokenDuration(left)}, ${whenLabel(refs.next).replace(/^(Today|Tomorrow)/, (w) => w.toLowerCase())}.`;
+    } else if (recapUI.phase === 'ready') {
+      updateRecapFooter(now);
+    }
+  }
+  function startRecapTicker() {
+    stopRecapTicker();
+    recapUI.timer = setInterval(tickRecap, 1000);
+  }
+  function stopRecapTicker() {
+    clearInterval(recapUI.timer);
+    recapUI.timer = null;
+  }
+
   /* --- Opening the right thought from a notification --- */
   function openThought(id) {
     hideNudge();
@@ -1939,6 +2230,7 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     const match = hash.match(/^#thought=(.+)$/);
     if (match) openThought(decodeURIComponent(match[1]));
     else if (hash === '#bank') navigate('bank');
+    else if (hash === '#recap') navigate('recap');
     else return;
     try { history.replaceState(null, '', location.pathname + location.search); } catch (_) { /* ignore */ }
   }
@@ -2071,7 +2363,7 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
         break;
       }
       // misc
-      case 'review-soon': renderRecapSheet(); openSheet('recap'); break;
+      case 'open-thought': openThought(id); break;
       case 'nudge-open': openNudgedThought(); break;
       case 'nudge-close': hideNudge(); break;
       default: break;
@@ -2158,7 +2450,7 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
         const data = e.data || {};
         if (data.type !== 'open-from-notification') return;
         if (data.thoughtId) openThought(data.thoughtId);
-        else if (data.kind === 'recap') navigate('bank');
+        else if (data.kind === 'recap') navigate('recap');
       });
     }
     window.addEventListener('hashchange', handleDeepLink);
