@@ -2071,7 +2071,7 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
         break;
       }
       // misc
-      case 'review-soon': toast('Daily Review is on its way. Your thoughts are safe in the Thought Bank.', { icon: 'sun', tone: 'info', duration: 3200 }); break;
+      case 'review-soon': renderRecapSheet(); openSheet('recap'); break;
       case 'nudge-open': openNudgedThought(); break;
       case 'nudge-close': hideNudge(); break;
       default: break;
