@@ -1,74 +1,98 @@
-# Cas RC Trainingsweek
+# Thought Cards: prototype 1.0.0
 
-Mobiele trainingsapp voor het weekschema (Lower / Upper / Full Body) in Cas RC geel-zwart.
-Sets aftikken, kg invullen met je vorige gewicht ernaast, rusttimer, uitlegvideo per oefening
-en een Stats-pagina met je progressie.
+*Get it out of your head. I’ll remember it.*
+
+Mobiel webprototype in gewone HTML, CSS en JavaScript. Geen framework, geen build, geen backend.
 
 ## Bestanden
 
-| Bestand | Wat |
+| Bestand | Inhoud |
 |---|---|
-| `index.html` | De pagina |
-| `style.css` | Alle opmaak (mobile first) |
-| `data.js` | **Het schema.** Oefeningen, sets, reps en spiergroepen |
-| `store.js` | Opslag van je gewichten en vinkjes + rekenwerk |
-| `stats.js` | De Stats-pagina en grafieken |
-| `app.js` | Schema-weergave, navigatie en rusttimer |
-| `sw.js` | Zorgt dat de app offline opent na het eerste bezoek |
-| `manifest.webmanifest` + `icons/` | Nodig voor "Zet op beginscherm" |
+| `index.html` | Schermen, sheets, navigatie en de inline SVG-iconenset |
+| `styles.css` | Design tokens (CSS custom properties), layout, animaties, dark mode, reduced motion |
+| `app.js` | Alle logica, in 16 genummerde secties (state, storage, cleanup, gestures, speech …) |
+| `manifest.webmanifest` | PWA-gegevens (naam, kleuren, iconen) |
+| `service-worker.js` | Offline-cache van de eigen statische bestanden |
+| `assets/` | App-iconen (192, 512, maskable 512, Apple touch icon, SVG-favicon) |
+| `push-server/worker.js` | Reminder-server (Cloudflare Worker) voor lockscreen-meldingen en de dagelijkse recap |
+| `push-server/SETUP.md` | Stap-voor-stap instellen van die server, zonder command line |
 
-## Online zetten met GitHub Pages
+## Lockscreen-reminders en dagelijkse recap
 
-1. Maak op github.com een nieuwe repository, bijvoorbeeld `casrc-training` (Public).
-2. Klik **Add file → Upload files** en sleep alle bestanden **én** de map `icons` erin. Klik **Commit changes**.
-3. Ga naar **Settings → Pages**. Kies bij *Source* **Deploy from a branch**, branch **main**, map **/ (root)**, en klik **Save**.
-4. Na 1 à 2 minuten staat de app op `https://<jouw-gebruikersnaam>.github.io/casrc-training/`.
+Zonder server werken reminders alleen in de app zolang die openstaat. Met de reminder-server (zie **`push-server/SETUP.md`**) komen ze op je lockscreen, ook als de app dicht is:
 
-Update je een bestaande versie? Upload de nieuwe bestanden over de oude heen.
+- **Tijdreminder:** zet een reminder op een gedachte (tijdens Capture, of later via het klokje in een geopende kaart in de Thought Bank). Op dat tijdstip krijg je een melding; tikken opent die gedachte.
+- **Dagelijkse recap:** Settings → **Daily recap**. Kies per dag of je hem wilt en hoe laat. Je krijgt een overzicht van wat er nog wacht (belangrijk eerst), plus hoeveel je die dag hebt afgerond.
+- **Werkt op:** iPhone vanaf iOS 16.4, alleen als de app via *Zet op beginscherm* is geïnstalleerd en vanaf daar geopend. Android met Chrome.
+- **Hoe het werkt:** de app stuurt bij elke wijziging een kopie van je gedachten, reminder-tijden, recap-schema en tijdzone naar je eigen server. Die controleert elke minuut wat er verstuurd moet worden.
+- **Uitzetten:** Notifications uit in Settings verwijdert de kopie op de server.
+- **Niet mogelijk in een webapp:** melding bij aankomst op een locatie.
 
-## Op het beginscherm zetten
+## Lokaal openen
 
-- **iPhone (Safari):** open de link → deelknop → **Zet op beginscherm**.
-- **Android (Chrome):** open de link → menu (⋮) → **Toevoegen aan startscherm** / **App installeren**.
+Gebruik een kleine lokale webserver (dubbelklikken op `index.html` werkt ook, maar dan doen de service worker en soms de microfoon niet mee):
 
-## Vorige keer en PR
-
-Onder elk kg-vakje staat wat je de vorige keer bij die set deed. Tik erop om dat gewicht over te nemen.
-Na invullen zie je het verschil (+2,5 / gelijk / −2,5) en **PR** als het je zwaarste gewicht ooit is voor die oefening.
-
-## Stats
-
-- **Algemene kracht:** per oefening wordt je geschatte 1RM (Epley: kg × (1 + reps/30)) vergeleken met je eerste keer. Het gemiddelde daarvan is je krachtindex: 100 = start, 110 = 10% sterker.
-- **Volume per week:** kg × reps van alle sets met gewicht.
-- **Per spiergroep:** krachtgroei per spiergroep, en aantal sets deze week vs vorige week.
-- **Aanwezigheid:** de laatste 8 weken, hoe voller het vakje hoe meer je hebt afgetikt.
-- **Per oefening:** grafiek, zwaarste gewicht, geschatte 1RM, groei sinds start en je laatste sessies.
-
-Nog geen gegevens? Kies **Bekijk met voorbeelddata** om te zien hoe het eruitziet. Voorbeelddata wordt nooit opgeslagen.
-
-Let op: reps komen uit het schema. Doe je meer of minder reps, dan klopt de geschatte 1RM iets minder precies.
-Oefeningen zonder gewicht (sprongen, band) tellen mee voor sets en aanwezigheid, niet voor kracht.
-
-## Opslag en back-up
-
-- Alles staat alleen op je eigen telefoon (localStorage). Geen account, geen synchronisatie; teamgenoten zien elkaars cijfers niet.
-- Vinkjes horen bij een datum, dus elke week begin je met een leeg schema; je gewichten en geschiedenis blijven bewaard.
-- Via **Stats → Back-up opslaan** krijg je een `.json`-bestand. Op een nieuwe telefoon laad je dat in met **Back-up inladen**.
-- Browsergegevens wissen = je geschiedenis kwijt. Maak dus af en toe een back-up.
-
-## Offline
-
-Na één keer openen met internet werkt alles ook zonder bereik, behalve de "Uitleg"-knoppen (YouTube).
-
-## Nieuw schema?
-
-Pas `data.js` aan. Houd de **namen** van oefeningen gelijk als je hun geschiedenis wilt behouden.
-Verhoog daarna in `sw.js` de regel `const VERSION = "v2";` (naar `"v3"` enz.) zodat telefoons de nieuwe versie ophalen.
-
-## Lokaal testen
-
-```
+```bash
+cd thought-cards
 python3 -m http.server 8000
 ```
 
-en open `http://localhost:8000`.
+Open daarna `http://localhost:8000`. In Chrome DevTools kun je met de device toolbar een iPhone-formaat kiezen.
+
+## Online zetten via GitHub Pages
+
+1. Maak een repository aan en zet de inhoud van deze map in de root.
+2. Ga naar **Settings → Pages**.
+3. Kies bij *Source* **Deploy from a branch**, branch `main`, map `/ (root)`, en klik **Save**.
+4. Na een minuut staat de app op `https://<gebruikersnaam>.github.io/<repository>/`.
+
+Alle paden zijn relatief, dus de app werkt ook onder zo’n `/repository/`-subpad. Netlify en Cloudflare Pages werken ook: map uploaden, geen buildcommando nodig.
+
+## Op het beginscherm zetten
+
+- **iPhone (Safari):** open de HTTPS-link → deelknop → *Zet op beginscherm*.
+- **Android (Chrome):** open de link → menu ⋮ → *App installeren* of *Toevoegen aan startscherm*.
+
+## Opslag
+
+- Gedachten: `localStorage` onder `thoughtCards.thoughts`
+- Instellingen: `thoughtCards.settings`
+- Eigen plekken: `thoughtCards.places`
+- Niet-opgeslagen invoer op het Capture-scherm: `thoughtCards.draft`
+
+Alles staat in déze browser op dít apparaat. Er is geen account. Alleen met lockscreen-reminders aan gaat er een kopie naar je eigen reminder-server. Site-data wissen wist ook de Thought Bank. Een geïnstalleerde app op iOS heeft een eigen opslag, los van Safari.
+
+Beschadigde opgeslagen data laat de app niet crashen: de ruwe tekst wordt als `…backup-<tijd>` bewaard en de app start met een lege lijst. Ontbrekende velden worden aangevuld door `normalizeThought()`.
+
+**Voorbeelddata:** bovenaan `app.js` staat `const USE_DEMO_DATA = true;`. Zet hem op `false` om zonder voorbeeldgedachten te starten. Voorbeelden worden alleen toegevoegd als er nog nooit gedachten zijn opgeslagen.
+
+## Afgeronde gedachten
+
+`cleanupCompletedThoughtsFromPreviousDays()` verwijdert een Done-gedachte zodra de lokale kalenderdag van `completedAt` vóór vandaag ligt. Hij draait bij opstarten, bij `visibilitychange`, bij `focus`, bij terugkeren uit de bfcache, vóór elke render van de Thought Bank en elke 20 seconden (dus ook als middernacht passeert terwijl de app openstaat).
+
+## Testhulp in de console
+
+```js
+thoughtCardsDebug.backdateCompleted()  // zet Done-gedachten op gisteren 23:50, herlaad daarna
+thoughtCardsDebug.triggerReminder()    // laat een reminder nu afgaan (in-app melding)
+thoughtCardsDebug.thoughts()           // kopie van alle gedachten
+thoughtCardsDebug.resetAll()           // alles wissen en herladen
+```
+
+Testen met een andere server zonder `app.js` te wijzigen:
+
+```js
+localStorage.setItem('thoughtCards.pushServer', 'https://...workers.dev'); location.reload();
+```
+
+## Offline
+
+Na het eerste bezoek via HTTPS (of localhost) opent de app ook zonder internet: schermen, opslaan, zoeken, Done en verwijderen werken gewoon. Offline valt het lettertype Outfit terug op het systeemlettertype, en spraak werkt in de meeste browsers niet zonder netwerk. Bij een nieuwe versie: verhoog `CACHE_VERSION` in `service-worker.js`.
+
+## Wat gesimuleerd of beperkt is
+
+- **Reminders zonder server:** verschijnen alleen als in-app melding (“A gentle nudge”) zolang de app open is. Met de reminder-server komen ze op je lockscreen.
+- **Reminder-dag:** je kiest Today of Tomorrow; verder vooruit kan nog niet.
+- **Locaties:** Home, Office, Laundromat en de lijst in *Find a location* zijn voorbeeldplekken. Zoeken filtert je eigen plekken en laat je een nieuwe naam toevoegen; er is geen echte adreszoeker of geofencing. *Use my current location* gebruikt wel echt `navigator.geolocation` (alleen via HTTPS).
+- **Spraak:** gebruikt de Web Speech API. Werkt in Chrome (Android/desktop) en Safari (iOS 14.5+); niet in Firefox. In een op het beginscherm geïnstalleerde iOS-app kan spraak ontbreken; dan verschijnt een vriendelijke melding en kun je gewoon typen.
+- **Daily Review** (het zonnetje in het menu) is een placeholder.
