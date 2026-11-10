@@ -4,7 +4,7 @@
    Bump CACHE_VERSION when you publish changes. */
 
 const CACHE_PREFIX = 'thought-cards-';
-const CACHE_VERSION = 'v1.3.0-bp';
+const CACHE_VERSION = 'v1.3.1-bp';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 
 const APP_SHELL = [
