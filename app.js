@@ -57,10 +57,10 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     { id: 'laundromat', icon: 'navigation', title: 'Near a laundromat', sub: '3 places nearby', name: 'Laundromat', label: 'Near a laundromat', address: 'Any laundromat nearby', latitude: null, longitude: null },
   ];
   const SAMPLE_PLACES = [
-    { id: 'p-sudsy', name: 'Sudsy Corner Laundry', meta: '0.3 km · Open now', latitude: 51.5226, longitude: -0.1571 },
-    { id: 'p-mom', name: 'Mom’s House', meta: '2.1 km · Camden', latitude: 51.5390, longitude: -0.1426 },
-    { id: 'p-regent', name: 'Regent St Cleaners', meta: '0.8 km · Closes 8 PM', latitude: 51.5136, longitude: -0.1400 },
-    { id: 'p-studio', name: 'The Studio', meta: '1.4 km · Workspace', latitude: 51.5246, longitude: -0.0877 },
+    { id: 'p-sudsy', name: 'Sudsy Corner Laundry', meta: '0.3 km, Open now', latitude: 51.5226, longitude: -0.1571 },
+    { id: 'p-mom', name: 'Mom’s House', meta: '2.1 km, Camden', latitude: 51.5390, longitude: -0.1426 },
+    { id: 'p-regent', name: 'Regent St Cleaners', meta: '0.8 km, Closes 8 PM', latitude: 51.5136, longitude: -0.1400 },
+    { id: 'p-studio', name: 'The Studio', meta: '1.4 km, Workspace', latitude: 51.5246, longitude: -0.0877 },
   ];
 
   const motionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
@@ -116,10 +116,10 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     if (key === localDateKey(addDays(today, -1))) return 'Yesterday';
     return dateFromKey(key).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   }
-  /** Relative reminder text used in the Thought Bank, e.g. "Tomorrow · 9:00 AM" */
+  /** Relative reminder text used in the Thought Bank, e.g. "Tomorrow, 9:00 AM" */
   function reminderLabel(reminder) {
     if (!reminder || !reminder.enabled) return '';
-    return `${dayLabel(reminder.date)} · ${formatTime(reminder.time)}`;
+    return `${dayLabel(reminder.date)}, ${formatTime(reminder.time)}`;
   }
   /** Text for the dark chip on the capture card, e.g. "At 8:00 AM" */
   function reminderChipText(reminder) {
@@ -130,7 +130,7 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
   function capturedLabel(iso) {
     const d = new Date(iso);
     const t = formatTime(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
-    return `Captured ${dayLabel(localDateKey(d))} · ${t}`;
+    return `Captured ${dayLabel(localDateKey(d))}, ${t}`;
   }
   function reminderDate(reminder) {
     if (!reminder || !reminder.enabled || !isDateKey(reminder.date) || !isTime(reminder.time)) return null;
@@ -171,6 +171,18 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     const use = document.createElementNS(SVG_NS, 'use');
     use.setAttribute('href', `#i-${name}`);
     svg.append(use);
+    return svg;
+  }
+  /** Button Petite face: two eyes and a grin. Blinks and glances (see 15b). */
+  function face(extraClass = '') {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', `face ${extraClass}`.trim());
+    svg.setAttribute('viewBox', '0 0 100 64');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    svg.innerHTML = '<g class="face__eyes"><rect class="face__eye" x="24" y="6" width="13" height="22" rx="6.5"/>'
+      + '<rect class="face__eye" x="63" y="6" width="13" height="22" rx="6.5"/></g>'
+      + '<path class="face__mouth" d="M27 40 Q50 60 73 40"/>';
     return svg;
   }
   function restartAnimation(node, className) {
@@ -458,7 +470,7 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
   function updateThemeColor() {
     const meta = $('meta[name="theme-color"]');
     if (!meta) return;
-    const color = cssVar(state.screen === 'bank' ? '--bg-bank' : state.screen === 'recap' ? '--bg-recap' : '--bg-capture');
+    const color = cssVar(state.screen === 'bank' ? '--bg-bank' : state.screen === 'recap' ? '--bg-recap' : state.screen === 'settings' ? '--bg-settings' : '--bg-capture');
     if (color) meta.setAttribute('content', color);
   }
 
@@ -1365,7 +1377,7 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     const list = [];
     if (state.placeDraft.current) list.push(state.placeDraft.current);
     if (q && !state.places.some((p) => p.name.toLowerCase() === ql)) {
-      list.push({ id: 'custom', name: q, meta: 'New place · tap to use', temporary: true });
+      list.push({ id: 'custom', name: q, meta: 'New place, tap to use', temporary: true });
     }
     state.places
       .filter((p) => !ql || p.name.toLowerCase().includes(ql) || p.meta.toLowerCase().includes(ql))
@@ -2013,7 +2025,10 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
       svgEl('line', { class: 'sunset__horizon', x1: 8, y1: 130, x2: 272, y2: 130 }),
     );
     const sun = svgEl('g', { class: 'sunset__sun' });
-    sun.append(svgEl('circle', { class: 'sunset__glow', r: 24 }), svgEl('circle', { class: 'sunset__disc', r: 13 }));
+    sun.append(
+      svgEl('rect', { class: 'sunset__side', x: -14, y: -10, width: 28, height: 28, rx: 9 }),
+      svgEl('rect', { class: 'sunset__disc', x: -14, y: -14, width: 28, height: 28, rx: 9 }),
+    );
     svg.append(sun);
     return svg;
   }
@@ -2081,7 +2096,7 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     const anyDay = WEEKDAYS.some((d) => state.settings.recap.days[d].on);
     return [
       el('div', { class: 'recap-hero recap-hero--off' }, [
-        el('span', { class: 'recap-off-icon', 'aria-hidden': 'true' }, [icon('moon')]),
+        el('span', { class: 'recap-off-icon', 'aria-hidden': 'true' }, [face('face--sleepy')]),
         el('p', { class: 'recap-off-title', text: state.settings.recap.enabled && !anyDay ? 'No recap days picked' : 'Your recap is resting' }),
         el('p', { class: 'recap-off-text', text: 'Pick a time and you’ll get a gentle look at what’s still waiting.' }),
         el('button', { class: 'btn-primary', type: 'button', dataset: { action: 'open-recap' }, text: 'Pick a time' }),
@@ -2146,7 +2161,7 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
           donePill,
         ])
       : el('div', { class: 'recap-hero recap-hero--summary recap-hero--clear' }, [
-          el('span', { class: 'recap-clear-icon', 'aria-hidden': 'true' }, [icon('sparkles')]),
+          el('span', { class: 'recap-clear-icon', 'aria-hidden': 'true' }, [face()]),
           el('p', { class: 'recap-summary__big' }, [el('span', { class: 'recap-summary__text recap-summary__text--big', text: 'All clear' })]),
           el('p', { class: 'recap-off-text', text: 'Nothing is waiting. Your head is clear.' }),
           donePill,
@@ -2160,7 +2175,7 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     return [
       hero,
       recapSection('Still waiting', open.length, open.map((t) => recapRow(t, 'waiting'))),
-      recapSection('Coming up', upcoming.length, upcoming.map(({ t, due }) => recapRow(t, 'upcoming', `${dayLabel(localDateKey(due))} · ${formatTime(`${pad(due.getHours())}:${pad(due.getMinutes())}`)}`))),
+      recapSection('Coming up', upcoming.length, upcoming.map(({ t, due }) => recapRow(t, 'upcoming', `${dayLabel(localDateKey(due))}, ${formatTime(`${pad(due.getHours())}:${pad(due.getMinutes())}`)}`))),
       recapSection('Let go today', done.length, done.map((t) => recapRow(t, 'done', 'Done today'))),
       footer,
       recapPushCallout(),
@@ -2516,6 +2531,33 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     });
   }
 
+  /* ===================== 15b. FACES =====================
+     Faces blink every 2.4 to 6.5 s and glance around now and then.
+     Nothing floats. With reduced motion they stay still. */
+  function startFaces() {
+    const rand = (a, b) => a + Math.random() * (b - a);
+    const visibleFaces = () => $$('.face').filter((f) => f.getClientRects().length && !f.classList.contains('face--sleepy'));
+    function blink() {
+      if (!reducedMotion() && !document.hidden) {
+        visibleFaces().forEach((f) => {
+          setTimeout(() => restartAnimation(f, 'is-blinking'), rand(0, 160));
+        });
+      }
+      setTimeout(blink, rand(2400, 6500));
+    }
+    function glance() {
+      if (!reducedMotion() && !document.hidden) {
+        visibleFaces().forEach((f) => {
+          const dir = ['-4px', '4px', '0px'][Math.floor(Math.random() * 3)];
+          f.style.setProperty('--look', dir);
+        });
+      }
+      setTimeout(glance, rand(3000, 7000));
+    }
+    setTimeout(blink, rand(1200, 2600));
+    setTimeout(glance, rand(2000, 4000));
+  }
+
   /* Small helpers for testing in the browser console. */
   window.thoughtCardsDebug = {
     version: APP_VERSION,
@@ -2577,6 +2619,7 @@ const PUSH_SERVER_URL = 'https://thought-cards-push.samrozemeijer2001.workers.de
     registerServiceWorker();
     handleDeepLink();
     verifyPush();
+    startFaces();
   }
 
   init();

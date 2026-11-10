@@ -7,7 +7,7 @@
   <meta name="description" content="Get it out of your head. I’ll remember it.">
 
   <!-- PWA / home screen -->
-  <meta name="theme-color" content="#F59A00">
+  <meta name="theme-color" content="#FF9F43">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,10 +17,9 @@
   <link rel="icon" href="assets/icon-192.png" type="image/png" sizes="192x192">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 
-  <!-- Font: Outfit (SIL Open Font License). Falls back to system fonts offline. -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap">
+  <!-- Button Petite fonts: Barlow Condensed + Rubik (SIL Open Font License), bundled so they work offline -->
+  <link rel="preload" href="assets/fonts/barlow-condensed-900.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/rubik-600.woff2" as="font" type="font/woff2" crossorigin>
 
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -79,7 +78,7 @@
       <div class="bank-list" id="bank-list" role="list" aria-live="polite"></div>
 
       <div class="bank-empty" id="bank-empty" hidden>
-        <div class="empty-stack" aria-hidden="true"><span></span><span></span><span><svg class="icon icon--fill"><use href="#i-thumb"/></svg></span></div>
+        <div class="empty-stack" aria-hidden="true"><span></span><span></span><span><svg class="face" viewBox="0 0 100 64" aria-hidden="true" focusable="false"><g class="face__eyes"><rect class="face__eye" x="24" y="6" width="13" height="22" rx="6.5"/><rect class="face__eye" x="63" y="6" width="13" height="22" rx="6.5"/></g><path class="face__mouth" d="M27 40 Q50 60 73 40"/></svg></span></div>
         <h2 class="empty-title">Your Thought Bank is quiet.</h2>
         <p class="empty-text">Anything you save will be waiting safely here.</p>
         <button class="pill-btn" type="button" data-nav="capture">Capture a thought</button>
@@ -126,7 +125,7 @@
           </div>
         </article>
         <button class="mic-btn" type="button" data-action="mic" aria-label="Speak your thought"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg></button>
-        <button class="mic-big" type="button" data-action="mic" aria-label="Speak your thought"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg></button>
+        <button class="mic-big" type="button" data-action="mic" aria-label="Speak your thought"><span class="mic-big__top"><svg class="face" viewBox="0 0 100 64" aria-hidden="true" focusable="false"><g class="face__eyes"><rect class="face__eye" x="24" y="6" width="13" height="22" rx="6.5"/><rect class="face__eye" x="63" y="6" width="13" height="22" rx="6.5"/></g><path class="face__mouth" d="M27 40 Q50 60 73 40"/></svg><span class="mic-big__tag"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg>Talk</span></span></button>
       </div>
 
       <div class="capture-actions" id="capture-actions">
@@ -207,10 +206,10 @@
       <div class="sheet-content">
         <h2 class="sheet-title sheet-title--center" id="reminder-title" tabindex="-1">Drag to set the hour</h2>
         <svg class="clock" id="clock" viewBox="0 0 260 260" role="slider" tabindex="0" aria-label="Reminder hour" aria-valuemin="1" aria-valuemax="12" aria-valuenow="8" aria-valuetext="8:00 AM">
-          <circle class="clock__face" cx="130" cy="130" r="124"/>
+          <rect class="clock__face" x="4" y="4" width="252" height="252" rx="64"/>
           <g id="clock-nums"></g>
           <line class="clock__hand" id="clock-hand" x1="130" y1="130" x2="130" y2="54"/>
-          <circle class="clock__hub" cx="130" cy="130" r="9"/>
+          <rect class="clock__hub" x="121" y="121" width="18" height="18" rx="6"/>
           <text class="clock__time" id="clock-time" x="130" y="172">8:00</text>
         </svg>
         <div class="segmented segmented--ampm" role="group" aria-label="Morning or afternoon">
@@ -271,7 +270,7 @@
     <section class="sheet sheet--compact" id="sheet-delete" role="dialog" aria-modal="true" aria-labelledby="delete-title" hidden>
       <div class="sheet-grab" data-sheet-grab><span class="sheet-handle"></span></div>
       <div class="sheet-content confirm">
-        <div class="confirm-art" aria-hidden="true"><span></span><span></span></div>
+        <div class="confirm-art" aria-hidden="true"><span></span><span><svg class="face face--worried" viewBox="0 0 100 64" aria-hidden="true" focusable="false"><g class="face__eyes"><rect class="face__eye" x="24" y="6" width="13" height="22" rx="6.5"/><rect class="face__eye" x="63" y="6" width="13" height="22" rx="6.5"/></g><path class="face__mouth" d="M30 50 Q50 36 70 50"/></svg></span></div>
         <h2 class="sheet-title sheet-title--center" id="delete-title" tabindex="-1">Let this thought go?</h2>
         <p class="confirm-quote" id="delete-preview"></p>
         <div class="confirm-actions">
@@ -361,6 +360,7 @@
         <img class="about__icon" src="assets/icon-192.png" alt="" width="84" height="84">
         <h2 class="sheet-title sheet-title--center" id="about-title" tabindex="-1">Thought Cards</h2>
         <p class="about__version">Version 1.0.0 Prototype</p>
+        <p class="about__maker">A tiny app by <strong>Button Petite</strong></p>
         <p class="about__motto">Get it out of your head.<br>I’ll remember it.</p>
         <p class="about__note">The little sun in the menu opens your Daily recap.</p>
         <div class="sheet-actions"><button class="btn-soft" type="button" data-action="close-sheet">Close</button></div>
@@ -370,10 +370,9 @@
     <!-- ===================== RECORDING OVERLAY ===================== -->
     <div class="recorder" id="recorder" role="dialog" aria-modal="true" aria-label="Recording your thought" hidden>
       <div class="recorder__orb-wrap">
-        <span class="recorder__glow" aria-hidden="true"></span>
-        <button class="recorder__orb" type="button" id="recorder-stop" aria-label="Stop recording"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg></button>
+        <button class="recorder__orb" type="button" id="recorder-stop" aria-label="Stop recording"><span class="recorder__top"><svg class="face face--talking" viewBox="0 0 100 64" aria-hidden="true" focusable="false"><g class="face__eyes"><rect class="face__eye" x="24" y="6" width="13" height="22" rx="6.5"/><rect class="face__eye" x="63" y="6" width="13" height="22" rx="6.5"/></g><rect class="face__mouth face__mouth--open" x="36" y="38" width="28" height="18" rx="9"/></svg></span></button>
       </div>
-      <p class="recorder__label">Recording...</p>
+      <p class="recorder__label">Listening...</p>
       <p class="recorder__transcript" id="recorder-transcript" aria-live="polite"></p>
       <p class="recorder__hint">Tap anywhere to finish</p>
     </div>

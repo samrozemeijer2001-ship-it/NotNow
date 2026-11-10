@@ -4,6 +4,18 @@
 
 Mobiel webprototype in gewone HTML, CSS en JavaScript. Geen framework, geen build, geen backend.
 
+## Huisstijl: Button Petite
+
+Thought Cards gebruikt dezelfde huisstijl als de andere Button Petite-apps:
+
+- **Letters:** Barlow Condensed 900 in hoofdletters voor titels, labels en cijfers; Rubik 500–800 voor de rest. Beide zitten in `assets/fonts/` (SIL Open Font License) en werken dus ook offline.
+- **Kleurparen:** elk scherm heeft een eigen paar, en tekst, iconen en gezichtjes nemen altijd de inkt van de ondergrond. Capture = oranje (de eigen kleur van deze app), Thought Bank = kobalt, Daily recap = paars, Settings = geel. Kaarten zijn paper en sky, Done is mint, Discard is rood.
+- **3D:** knoppen en kaarten hebben een bovenvlak op een effen zijvlak eronder, als gestapeld papier. Bij een tik zakt het bovenvlak in. Geen schaduwen, verlopen, blur of randen.
+- **Vormen:** alleen afgeronde rechthoeken, radius altijd kleiner dan de halve hoogte (geen pillen of cirkels).
+- **Beweging:** spring `cubic-bezier(.34,1.56,.64,1)` voor binnenkomers, soft `cubic-bezier(.22,1,.36,1)` voor fades. Gezichtjes knipperen elke 2,4–6,5 s en kijken soms opzij. Met *reduce motion* staat alles stil.
+
+Alle kleuren staan bovenaan `styles.css` in één blok (`--yellow`, `--yellow-ink`, `--yellow-side`, enzovoort). Wijken ze af van `brand/tokens.json` uit de kit, vervang dan alleen die regels; de rest volgt vanzelf.
+
 ## Bestanden
 
 | Bestand | Inhoud |
@@ -87,7 +99,7 @@ localStorage.setItem('thoughtCards.pushServer', 'https://...workers.dev'); locat
 
 ## Offline
 
-Na het eerste bezoek via HTTPS (of localhost) opent de app ook zonder internet: schermen, opslaan, zoeken, Done en verwijderen werken gewoon. Offline valt het lettertype Outfit terug op het systeemlettertype, en spraak werkt in de meeste browsers niet zonder netwerk. Bij een nieuwe versie: verhoog `CACHE_VERSION` in `service-worker.js`.
+Na het eerste bezoek via HTTPS (of localhost) opent de app ook zonder internet: schermen, opslaan, zoeken, Done en verwijderen werken gewoon. De lettertypes zitten in de app zelf, dus die werken ook offline. Spraak werkt in de meeste browsers niet zonder netwerk. Bij een nieuwe versie: verhoog `CACHE_VERSION` in `service-worker.js`.
 
 ## Wat gesimuleerd of beperkt is
 

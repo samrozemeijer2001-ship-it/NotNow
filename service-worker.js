@@ -4,7 +4,7 @@
    Bump CACHE_VERSION when you publish changes. */
 
 const CACHE_PREFIX = 'thought-cards-';
-const CACHE_VERSION = 'v1.2.1';
+const CACHE_VERSION = 'v1.3.0-bp';
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 
 const APP_SHELL = [
@@ -18,6 +18,12 @@ const APP_SHELL = [
   './assets/icon-512.png',
   './assets/icon-maskable-512.png',
   './assets/apple-touch-icon.png',
+  './assets/fonts/barlow-condensed-800.woff2',
+  './assets/fonts/barlow-condensed-900.woff2',
+  './assets/fonts/rubik-500.woff2',
+  './assets/fonts/rubik-600.woff2',
+  './assets/fonts/rubik-700.woff2',
+  './assets/fonts/rubik-800.woff2',
 ];
 
 self.addEventListener('install', (event) => {
